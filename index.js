@@ -1,36 +1,38 @@
 import express from "express";
 import cors from "cors";
-import 'dotenv/config'
-import { MongoClient } from 'mongodb';
+import "dotenv/config";
+import { MongoClient } from "mongodb";
 
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-// middleware
-app.use(cors());
+// Middleware
+app.use(
+  cors({
+    origin: [
+      "https://web-booknook.vercel.app",
+      "http://localhost:3000",
+    ],
+  })
+);
+
 app.use(express.json());
 
-// MongoDB dataabse connection
-const client = new MongoClient(`mongodb://${process.env.DB_USER}:${process.env.DB_PASSWORD}@ac-arrrync-shard-00-00.yloqdzu.mongodb.net:27017,ac-arrrync-shard-00-01.yloqdzu.mongodb.net:27017,ac-arrrync-shard-00-02.yloqdzu.mongodb.net:27017/?ssl=true&replicaSet=atlas-9ee286-shard-0&authSource=admin`);
+// MongoDB Connection
+const client = new MongoClient(process.env.MONGODB_URI);
 
-export async function connectToMongoDB() {
- try {
-   await client.connect();
-   console.log("Successfully connected to MongoDB!");
-   return client;
- } catch (err) {
-   console.dir(err);
- }
-}
+await client.connect();
+console.log("Successfully connected to MongoDB!");
 
-const dbClient = await connectToMongoDB();
-const db = dbClient.db("booknook");
+const db = client.db("booknook");
 const books = db.collection("books");
 
+// Home Route
 app.get("/", (req, res) => {
   res.send("Hello from BookNook server");
 });
 
+// Get All Books
 app.get("/books", async (req, res) => {
   try {
     const allBooks = await books.find().toArray();
@@ -41,6 +43,7 @@ app.get("/books", async (req, res) => {
   }
 });
 
+// Get Latest 8 Books
 app.get("/books/latest", async (req, res) => {
   try {
     const latestBooks = await books
@@ -56,6 +59,7 @@ app.get("/books/latest", async (req, res) => {
   }
 });
 
+// Start Server
 app.listen(PORT, () => {
   console.log(`BookNook server is running on port ${PORT}`);
 });
