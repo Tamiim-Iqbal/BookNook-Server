@@ -19,7 +19,7 @@ app.use(
 app.use(express.json());
 
 // MongoDB Connection
-const client = new MongoClient(process.env.MONGODB_URI);
+const client = new MongoClient(`mongodb://${process.env.DB_USER}:${process.env.DB_PASSWORD}@ac-arrrync-shard-00-00.yloqdzu.mongodb.net:27017,ac-arrrync-shard-00-01.yloqdzu.mongodb.net:27017,ac-arrrync-shard-00-02.yloqdzu.mongodb.net:27017/?ssl=true&replicaSet=atlas-9ee286-shard-0&authSource=admin`);
 
 await client.connect();
 console.log("Successfully connected to MongoDB!");
