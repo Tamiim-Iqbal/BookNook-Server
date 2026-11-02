@@ -35,7 +35,11 @@ app.get("/", (req, res) => {
 // Get All Books
 app.get("/books", async (req, res) => {
   try {
-    const allBooks = await books.find().toArray();
+    const allBooks = await books
+      .find()
+      .sort({ addedAt: -1 })
+      .toArray();
+
     res.json(allBooks);
   } catch (err) {
     console.error(err);
@@ -71,7 +75,7 @@ app.get("/books/latest", async (req, res) => {
   try {
     const latestBooks = await books
       .find()
-      .sort({ _id: -1 })
+      .sort({ addedAt: -1 })
       .limit(8)
       .toArray();
 
