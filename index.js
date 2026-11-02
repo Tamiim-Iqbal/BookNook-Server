@@ -104,6 +104,28 @@ app.get("/book-details/:id", async (req, res) => {
   }
 });
 
+
+// Get Logged-in User's Books
+app.get("/books/my-books", async (req, res) => {
+  try {
+    const email = req.query.email;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const myBooks = await books
+      .find({ "addedBy.email": email })
+      .sort({ addedAt: -1 })
+      .toArray();
+
+    res.json(myBooks);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch user's books" });
+  }
+});
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`BookNook server is running on port ${PORT}`);
