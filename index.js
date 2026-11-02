@@ -13,6 +13,7 @@ app.use(
       "https://web-booknook.vercel.app",
       "http://localhost:3000",
     ],
+    credentials: true,
   })
 );
 
@@ -25,7 +26,7 @@ await client.connect();
 console.log("Successfully connected to MongoDB!");
 
 const db = client.db("booknook");
-const books = db.collection("books");   // all books collection
+const books = db.collection("books");
 
 // Home Route
 app.get("/", (req, res) => {
@@ -41,9 +42,12 @@ app.get("/books", async (req, res) => {
       .toArray();
 
     res.json(allBooks);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch books" });
+  } catch (error) {
+    console.error("Error fetching books:", error);
+
+    res.status(500).json({
+      error: "Failed to fetch books",
+    });
   }
 });
 
@@ -63,6 +67,8 @@ app.post("/books", async (req, res) => {
       insertedId: result.insertedId,
     });
   } catch (error) {
+    console.error("Error adding book:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to add book",
@@ -80,30 +86,132 @@ app.get("/books/latest", async (req, res) => {
       .toArray();
 
     res.json(latestBooks);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch latest books" });
+  } catch (error) {
+    console.error("Error fetching latest books:", error);
+
+    res.status(500).json({
+      error: "Failed to fetch latest books",
+    });
   }
 });
 
 // Get Book by ID
 app.get("/book-details/:id", async (req, res) => {
-  const {id} = req.params;
-
   try {
-    const result = await books.findOne({ _id: new ObjectId(id) });
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        error: "Invalid book ID",
+      });
+    }
+
+    const result = await books.findOne({
+      _id: new ObjectId(id),
+    });
 
     if (!result) {
-      return res.status(404).json({ error: "Book not found" });
+      return res.status(404).json({
+        error: "Book not found",
+      });
     }
-      res.json(result);
-    } 
-    catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch book" });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching book:", error);
+
+    res.status(500).json({
+      error: "Failed to fetch book",
+    });
   }
 });
 
+// Update a Book
+app.patch("/books/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate book ID
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: "Invalid book ID",
+      });
+    }
+
+    const {
+      name,
+      author,
+      category,
+      copy,
+      img,
+      description,
+      rating,
+    } = req.body;
+
+    // Validate required fields
+    if (
+      !name?.trim() ||
+      !author?.trim() ||
+      !category?.trim() ||
+      !img?.trim() ||
+      !description?.trim() ||
+      copy === undefined ||
+      rating === undefined
+    ) {
+      return res.status(400).json({
+        message: "All book fields are required",
+      });
+    }
+
+    // Validate copy and rating
+    if (
+      !Number.isInteger(Number(copy)) ||
+      Number(copy) < 1 ||
+      !Number.isFinite(Number(rating)) ||
+      Number(rating) < 0 ||
+      Number(rating) > 5
+    ) {
+      return res.status(400).json({
+        message: "Invalid copy or rating value",
+      });
+    }
+
+    // Prepare updated book data
+    const updatedBook = {
+      name: name.trim(),
+      author: author.trim(),
+      category: category.trim(),
+      copy: Number(copy),
+      img: img.trim(),
+      description: description.trim(),
+      rating: Number(rating),
+    };
+
+    const result = await books.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updatedBook }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        message: "Book not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Book updated successfully",
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("Error updating book:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to update book",
+    });
+  }
+});
 
 // Get Logged-in User's Books
 app.get("/books/my-books", async (req, res) => {
@@ -111,7 +219,9 @@ app.get("/books/my-books", async (req, res) => {
     const email = req.query.email;
 
     if (!email) {
-      return res.status(400).json({ message: "Email is required" });
+      return res.status(400).json({
+        message: "Email is required",
+      });
     }
 
     const myBooks = await books
@@ -120,9 +230,12 @@ app.get("/books/my-books", async (req, res) => {
       .toArray();
 
     res.json(myBooks);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch user's books" });
+  } catch (error) {
+    console.error("Error fetching user's books:", error);
+
+    res.status(500).json({
+      error: "Failed to fetch user's books",
+    });
   }
 });
 
