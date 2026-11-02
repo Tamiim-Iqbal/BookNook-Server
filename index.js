@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import "dotenv/config";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -19,13 +19,13 @@ app.use(
 app.use(express.json());
 
 // MongoDB Connection
-const client = new MongoClient(`mongodb://${process.env.DB_USER}:${process.env.DB_PASSWORD}@ac-arrrync-shard-00-00.yloqdzu.mongodb.net:27017,ac-arrrync-shard-00-01.yloqdzu.mongodb.net:27017,ac-arrrync-shard-00-02.yloqdzu.mongodb.net:27017/?ssl=true&replicaSet=atlas-9ee286-shard-0&authSource=admin`);
+const client = new MongoClient(process.env.MONGODB_URI);
 
 await client.connect();
 console.log("Successfully connected to MongoDB!");
 
 const db = client.db("booknook");
-const books = db.collection("books");
+const books = db.collection("books");   // all books collection
 
 // Home Route
 app.get("/", (req, res) => {
@@ -43,6 +43,29 @@ app.get("/books", async (req, res) => {
   }
 });
 
+// Add a New Book
+app.post("/books", async (req, res) => {
+  try {
+    const newBook = {
+      ...req.body,
+      addedAt: new Date(),
+    };
+
+    const result = await books.insertOne(newBook);
+
+    res.status(201).json({
+      success: true,
+      message: "Book added successfully",
+      insertedId: result.insertedId,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to add book",
+    });
+  }
+});
+
 // Get Latest 8 Books
 app.get("/books/latest", async (req, res) => {
   try {
@@ -56,6 +79,24 @@ app.get("/books/latest", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch latest books" });
+  }
+});
+
+// Get Book by ID
+app.get("/book-details/:id", async (req, res) => {
+  const {id} = req.params;
+
+  try {
+    const result = await books.findOne({ _id: new ObjectId(id) });
+
+    if (!result) {
+      return res.status(404).json({ error: "Book not found" });
+    }
+      res.json(result);
+    } 
+    catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch book" });
   }
 });
 
