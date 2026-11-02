@@ -248,7 +248,7 @@ app.delete("/books/:id", async (req, res) => {
 
 
 // Get Logged-in User's Books
-app.get("/books/my-books", async (req, res) => {
+app.get("/my-books", async (req, res) => {
   try {
     const email = req.query.email;
 
