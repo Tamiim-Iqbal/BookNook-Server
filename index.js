@@ -18,10 +18,10 @@ app.use(
   })
 );
 
-// Verify API Middleware
+// Verify Token Middleware
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  console.log("Authorization Header:", authHeader); // Log the authorization header for debugging
+  // console.log("Authorization Header:", authHeader); // Log the authorization header for debugging
 
   if (!authHeader) {
     return res.status(401).json({
@@ -73,6 +73,9 @@ await borrowedBooks.createIndex(
   },
   {
     unique: true,
+    partialFilterExpression: {
+      status: "borrowed",
+    },
   }
 );
 
@@ -81,7 +84,7 @@ app.get("/", (req, res) => {
   res.send("Hello from BookNook server");
 });
 
-// Get All Books
+// Get All Books 
 app.get("/books", async (req, res) => {
   try {
     const allBooks = await books
@@ -99,8 +102,8 @@ app.get("/books", async (req, res) => {
   }
 });
 
-// Add a New Book
-app.post("/books", async (req, res) => {
+// Add a New Book : JWT
+app.post("/books", verifyToken, async (req, res) => {
   try {
     const newBook = {
       ...req.body,
@@ -124,7 +127,7 @@ app.post("/books", async (req, res) => {
   }
 });
 
-// Get Latest 8 Books
+// Get Latest 8 Books 
 app.get("/books/latest", async (req, res) => {
   try {
     const latestBooks = await books
@@ -143,7 +146,7 @@ app.get("/books/latest", async (req, res) => {
   }
 });
 
-// Get Book by ID
+// Get Book by ID : JWT
 app.get("/book-details/:id", verifyToken,  async (req, res) => {
   try {
     const { id } = req.params;
@@ -174,8 +177,8 @@ app.get("/book-details/:id", verifyToken,  async (req, res) => {
   }
 });
 
-// Update a Book
-app.patch("/books/:id", async (req, res) => {
+// Update a Book : JWT
+app.patch("/books/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -261,8 +264,8 @@ app.patch("/books/:id", async (req, res) => {
   }
 });
 
-// Delete a Book
-app.delete("/books/:id", async (req, res) => {
+// Delete a Book : JWT
+app.delete("/books/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -295,8 +298,8 @@ app.delete("/books/:id", async (req, res) => {
 });
 
 
-// Get Logged-in User's Books | My Books
-app.get("/my-books", async (req, res) => {
+// Get Logged-in User's Books | My Books : JWT
+app.get("/my-books", verifyToken, async (req, res) => {
   try {
     const email = req.query.email;
 
@@ -322,8 +325,9 @@ app.get("/my-books", async (req, res) => {
 });
 
 
-// Borrow a Book
-app.post("/borrow", async (req, res) => {
+
+// Borrow a Book : JWT
+app.post("/borrow", verifyToken, async (req, res) => {
   try {
     const { bookId, borrower } = req.body;
 
@@ -340,9 +344,12 @@ app.post("/borrow", async (req, res) => {
       });
     }
 
+    const normalizedBookId = new ObjectId(bookId);
+    const normalizedEmail = borrower.email.trim().toLowerCase();
+
     // Find the book
     const book = await books.findOne({
-      _id: new ObjectId(bookId),
+      _id: normalizedBookId,
     });
 
     if (!book) {
@@ -352,10 +359,11 @@ app.post("/borrow", async (req, res) => {
       });
     }
 
-    // Check if the user already borrowed this book
+    // Check existing active borrow
     const existingBorrow = await borrowedBooks.findOne({
-      bookId: new ObjectId(bookId),
-      "borrower.email": borrower.email.trim().toLowerCase(),
+      bookId: normalizedBookId,
+      "borrower.email": normalizedEmail,
+      status: "borrowed",
     });
 
     if (existingBorrow) {
@@ -368,7 +376,7 @@ app.post("/borrow", async (req, res) => {
     // Atomically decrease available copies
     const updateResult = await books.updateOne(
       {
-        _id: new ObjectId(bookId),
+        _id: normalizedBookId,
         copy: { $gt: 0 },
       },
       {
@@ -391,7 +399,7 @@ app.post("/borrow", async (req, res) => {
 
     // Create borrow document
     const borrowData = {
-      bookId: new ObjectId(bookId),
+      bookId: normalizedBookId,
 
       name: book.name,
       author: book.author,
@@ -400,7 +408,7 @@ app.post("/borrow", async (req, res) => {
 
       borrower: {
         name: borrower.name.trim(),
-        email: borrower.email.trim().toLowerCase(),
+        email: normalizedEmail,
       },
 
       borrowedAt,
@@ -411,7 +419,7 @@ app.post("/borrow", async (req, res) => {
     try {
       const result = await borrowedBooks.insertOne(borrowData);
 
-      res.status(201).json({
+      return res.status(201).json({
         success: true,
         message: "Book borrowed successfully",
         insertedId: result.insertedId,
@@ -420,7 +428,7 @@ app.post("/borrow", async (req, res) => {
     } catch (error) {
       // Restore copy if inserting the borrow record fails
       await books.updateOne(
-        { _id: new ObjectId(bookId) },
+        { _id: normalizedBookId },
         { $inc: { copy: 1 } }
       );
 
@@ -436,15 +444,16 @@ app.post("/borrow", async (req, res) => {
   } catch (error) {
     console.error("Error borrowing book:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to borrow book",
     });
   }
 });
 
-// Get My Borrowed Books
-app.get("/my-borrows", async (req, res) => {
+
+// Get My Borrowed Books : JWT
+app.get("/my-borrows", verifyToken, async (req, res) => {
   try {
     const email = req.query.email;
 
@@ -475,11 +484,8 @@ app.get("/my-borrows", async (req, res) => {
 });
 
 
-// Return a Book
-app.patch("/return/:id", async (req, res) => {
-  let borrowId;
-  let borrowRecord;
-
+// Return a Book : JWT
+app.patch("/return/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -490,9 +496,10 @@ app.patch("/return/:id", async (req, res) => {
       });
     }
 
-    borrowId = new ObjectId(id);
+    const borrowId = new ObjectId(id);
 
-    borrowRecord = await borrowedBooks.findOne({
+    // Find active borrow
+    const borrowRecord = await borrowedBooks.findOne({
       _id: borrowId,
       status: "borrowed",
     });
@@ -504,6 +511,7 @@ app.patch("/return/:id", async (req, res) => {
       });
     }
 
+    // Update borrow status atomically
     const returnResult = await borrowedBooks.updateOne(
       {
         _id: borrowId,
@@ -524,17 +532,30 @@ app.patch("/return/:id", async (req, res) => {
       });
     }
 
+    // Increase available copies
     const bookResult = await books.updateOne(
-      { _id: borrowRecord.bookId },
-      { $inc: { copy: 1 } }
+      {
+        _id: borrowRecord.bookId,
+      },
+      {
+        $inc: { copy: 1 },
+      }
     );
 
-    if (bookResult.modifiedCount === 0) {
+    if (bookResult.matchedCount === 0) {
+      // Rollback borrow status
       await borrowedBooks.updateOne(
-        { _id: borrowId, status: "returned" },
         {
-          $set: { status: "borrowed" },
-          $unset: { returnedAt: "" },
+          _id: borrowId,
+          status: "returned",
+        },
+        {
+          $set: {
+            status: "borrowed",
+          },
+          $unset: {
+            returnedAt: "",
+          },
         }
       );
 
@@ -544,30 +565,20 @@ app.patch("/return/:id", async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: "Book returned successfully",
     });
   } catch (error) {
     console.error("Error returning book:", error);
 
-    // Roll back the status if the return operation fails
-    if (borrowId && borrowRecord) {
-      await borrowedBooks.updateOne(
-        { _id: borrowId, status: "returned" },
-        {
-          $set: { status: "borrowed" },
-          $unset: { returnedAt: "" },
-        }
-      ).catch(console.error);
-    }
-
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to return book",
     });
   }
 });
+
 
 
 // Start Server
