@@ -27,6 +27,18 @@ console.log("Successfully connected to MongoDB!");
 
 const db = client.db("booknook");
 const books = db.collection("books");
+const borrowedBooks = db.collection("borrowedBooks");
+
+// Duplicate Borrow Handle
+await borrowedBooks.createIndex(
+  {
+    bookId: 1,
+    "borrower.email": 1,
+  },
+  {
+    unique: true,
+  }
+);
 
 // Home Route
 app.get("/", (req, res) => {
@@ -247,7 +259,7 @@ app.delete("/books/:id", async (req, res) => {
 });
 
 
-// Get Logged-in User's Books
+// Get Logged-in User's Books | My Books
 app.get("/my-books", async (req, res) => {
   try {
     const email = req.query.email;
@@ -272,6 +284,160 @@ app.get("/my-books", async (req, res) => {
     });
   }
 });
+
+
+// Borrow a Book
+app.post("/borrow", async (req, res) => {
+  try {
+    const { bookId, borrower } = req.body;
+
+    // Validate request data
+    if (
+      !bookId ||
+      !ObjectId.isValid(bookId) ||
+      !borrower?.name?.trim() ||
+      !borrower?.email?.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid borrow information",
+      });
+    }
+
+    // Find the book
+    const book = await books.findOne({
+      _id: new ObjectId(bookId),
+    });
+
+    if (!book) {
+      return res.status(404).json({
+        success: false,
+        message: "Book not found",
+      });
+    }
+
+    // Check if the user already borrowed this book
+    const existingBorrow = await borrowedBooks.findOne({
+      bookId: new ObjectId(bookId),
+      "borrower.email": borrower.email.trim().toLowerCase(),
+    });
+
+    if (existingBorrow) {
+      return res.status(409).json({
+        success: false,
+        message: "You have already borrowed this book",
+      });
+    }
+
+    // Atomically decrease available copies
+    const updateResult = await books.updateOne(
+      {
+        _id: new ObjectId(bookId),
+        copy: { $gt: 0 },
+      },
+      {
+        $inc: { copy: -1 },
+      }
+    );
+
+    if (updateResult.modifiedCount === 0) {
+      return res.status(409).json({
+        success: false,
+        message: "This book is currently unavailable",
+      });
+    }
+
+    // Calculate borrowing and return dates
+    const borrowedAt = new Date();
+
+    const returnDate = new Date(borrowedAt);
+    returnDate.setDate(returnDate.getDate() + 7);
+
+    // Create borrow document
+    const borrowData = {
+      bookId: new ObjectId(bookId),
+
+      name: book.name,
+      author: book.author,
+      category: book.category,
+      img: book.img,
+
+      borrower: {
+        name: borrower.name.trim(),
+        email: borrower.email.trim().toLowerCase(),
+      },
+
+      borrowedAt,
+      returnDate,
+      status: "borrowed",
+    };
+
+    try {
+      const result = await borrowedBooks.insertOne(borrowData);
+
+      res.status(201).json({
+        success: true,
+        message: "Book borrowed successfully",
+        insertedId: result.insertedId,
+        borrow: borrowData,
+      });
+    } catch (error) {
+      // Restore copy if inserting the borrow record fails
+      await books.updateOne(
+        { _id: new ObjectId(bookId) },
+        { $inc: { copy: 1 } }
+      );
+
+      if (error.code === 11000) {
+        return res.status(409).json({
+          success: false,
+          message: "You have already borrowed this book",
+        });
+      }
+
+      throw error;
+    }
+  } catch (error) {
+    console.error("Error borrowing book:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to borrow book",
+    });
+  }
+});
+
+// Get My Borrowed Books
+app.get("/my-borrows", async (req, res) => {
+  try {
+    const email = req.query.email;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    const result = await borrowedBooks
+      .find({
+        "borrower.email": email.toLowerCase(),
+        status: "borrowed",
+      })
+      .sort({ borrowedAt: -1 })
+      .toArray();
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching borrowed books:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch borrowed books",
+    });
+  }
+});
+
 
 // Start Server
 app.listen(PORT, () => {
