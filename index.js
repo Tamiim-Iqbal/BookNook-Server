@@ -5,6 +5,8 @@ import { MongoClient, ObjectId } from "mongodb";
 import { jwtVerify, createRemoteJWKSet } from 'jose'
 
 const app = express();
+app.use(express.json());
+
 const PORT = process.env.PORT || 5001;
 
 // Middleware
@@ -18,42 +20,45 @@ app.use(
   })
 );
 
+
+// JWKS Configuration (Outside Middleware)
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.AUTH_URL}/api/auth/jwks`)
+);
+
 // Verify Token Middleware
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  // console.log("Authorization Header:", authHeader); // Log the authorization header for debugging
 
-  if (!authHeader) {
+  // Check Authorization Header
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({
       error: "Unauthorized access. Please log in.",
-    }).send({msg: 'Unauthorized! Please log in.'});
+    });
   }
 
-  const token = authHeader.split(" ")[1];   // Assuming the token is in the format "Bearer <token>"
+  const token = authHeader.split(" ")[1];
 
   if (!token) {
     return res.status(401).json({
       error: "Unauthorized access. Please log in.",
-    }).send({msg: 'Unauthorized! Please log in.'});
+    });
   }
-  // console.log("Token:", token);
-  
-  const JWKS = createRemoteJWKSet(new URL('http://localhost:3000/api/auth/jwks'))
 
   try {
-    const {payload} = await jwtVerify(token, JWKS)
-    // console.log("Decoded Payload:", payload); 
-    next(); // Proceed to the next middleware or route handler
-  }
-  catch (error) {
+    const { payload } = await jwtVerify(token, JWKS);
+
+    req.user = payload;
+
+    next();
+  } catch (error) {
     console.error("Token verification error:", error);
-    return res.status(500).json({
+
+    return res.status(401).json({
       error: "Unauthorized access. Invalid token.",
-    }).send({msg: 'Unauthorized! Invalid token.'});
+    });
   }
 };
-
-app.use(express.json());
 
 // MongoDB Connection
 const client = new MongoClient(process.env.MONGODB_URI);
