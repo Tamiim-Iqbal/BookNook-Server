@@ -439,6 +439,101 @@ app.get("/my-borrows", async (req, res) => {
 });
 
 
+// Return a Book
+app.patch("/return/:id", async (req, res) => {
+  let borrowId;
+  let borrowRecord;
+
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid borrow ID",
+      });
+    }
+
+    borrowId = new ObjectId(id);
+
+    borrowRecord = await borrowedBooks.findOne({
+      _id: borrowId,
+      status: "borrowed",
+    });
+
+    if (!borrowRecord) {
+      return res.status(404).json({
+        success: false,
+        message: "Borrowed book not found or already returned",
+      });
+    }
+
+    const returnResult = await borrowedBooks.updateOne(
+      {
+        _id: borrowId,
+        status: "borrowed",
+      },
+      {
+        $set: {
+          status: "returned",
+          returnedAt: new Date(),
+        },
+      }
+    );
+
+    if (returnResult.modifiedCount === 0) {
+      return res.status(409).json({
+        success: false,
+        message: "This book has already been returned",
+      });
+    }
+
+    const bookResult = await books.updateOne(
+      { _id: borrowRecord.bookId },
+      { $inc: { copy: 1 } }
+    );
+
+    if (bookResult.modifiedCount === 0) {
+      await borrowedBooks.updateOne(
+        { _id: borrowId, status: "returned" },
+        {
+          $set: { status: "borrowed" },
+          $unset: { returnedAt: "" },
+        }
+      );
+
+      return res.status(404).json({
+        success: false,
+        message: "Original book not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Book returned successfully",
+    });
+  } catch (error) {
+    console.error("Error returning book:", error);
+
+    // Roll back the status if the return operation fails
+    if (borrowId && borrowRecord) {
+      await borrowedBooks.updateOne(
+        { _id: borrowId, status: "returned" },
+        {
+          $set: { status: "borrowed" },
+          $unset: { returnedAt: "" },
+        }
+      ).catch(console.error);
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to return book",
+    });
+  }
+});
+
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`BookNook server is running on port ${PORT}`);
