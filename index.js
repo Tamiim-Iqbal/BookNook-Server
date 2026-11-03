@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import "dotenv/config";
 import { MongoClient, ObjectId } from "mongodb";
+import { jwtVerify, createRemoteJWKSet } from 'jose'
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -16,6 +17,41 @@ app.use(
     credentials: true,
   })
 );
+
+// Verify API Middleware
+const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  console.log("Authorization Header:", authHeader); // Log the authorization header for debugging
+
+  if (!authHeader) {
+    return res.status(401).json({
+      error: "Unauthorized access. Please log in.",
+    }).send({msg: 'Unauthorized! Please log in.'});
+  }
+
+  const token = authHeader.split(" ")[1];   // Assuming the token is in the format "Bearer <token>"
+
+  if (!token) {
+    return res.status(401).json({
+      error: "Unauthorized access. Please log in.",
+    }).send({msg: 'Unauthorized! Please log in.'});
+  }
+  // console.log("Token:", token);
+  
+  const JWKS = createRemoteJWKSet(new URL('http://localhost:3000/api/auth/jwks'))
+
+  try {
+    const {payload} = await jwtVerify(token, JWKS)
+    // console.log("Decoded Payload:", payload); 
+    next(); // Proceed to the next middleware or route handler
+  }
+  catch (error) {
+    console.error("Token verification error:", error);
+    return res.status(500).json({
+      error: "Unauthorized access. Invalid token.",
+    }).send({msg: 'Unauthorized! Invalid token.'});
+  }
+};
 
 app.use(express.json());
 
@@ -108,7 +144,7 @@ app.get("/books/latest", async (req, res) => {
 });
 
 // Get Book by ID
-app.get("/book-details/:id", async (req, res) => {
+app.get("/book-details/:id", verifyToken,  async (req, res) => {
   try {
     const { id } = req.params;
 
